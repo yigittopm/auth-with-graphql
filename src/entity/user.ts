@@ -6,6 +6,7 @@ import {
     Entity, PrimaryGeneratedColumn, Index, Column, 
     CreateDateColumn, UpdateDateColumn, DeleteDateColumn
 } from 'typeorm'
+import { JWT, JWTActionType } from '../utils/jwt'
 
 @Entity('users')
 export default class User {
@@ -27,6 +28,9 @@ export default class User {
     @Column({ nullable: false, default: false})
     confirmed: boolean;
 
+    @Column({name: 'refresh_index', nullable: false, default: 0})
+    refreshIndex: number;
+
     @CreateDateColumn({ name: 'created_at'})
     createdAt: Date
 
@@ -36,12 +40,13 @@ export default class User {
     @DeleteDateColumn({ name: 'deleted_at'})
     deletedAt?: Date
 
-    constructor(email: string, password: string) {
+    constructor(email: string, password: string, refreshIndex: number) {
         this.id = 0;
         this.ukey = "";
         this.email = email;
         this.password = password;
         this.confirmed = false;
+        this.refreshIndex = refreshIndex;
         this.createdAt = new Date();
         this.updatedAt = new Date();
     }
@@ -73,7 +78,7 @@ export default class User {
 
         try {
             const hpass = await hash(password, 12);
-            const user = new User(email, hpass);
+            const user = new User(email, hpass, 0);
             user.ukey = uuidv4();
 
             if(await user.save()) {
@@ -100,8 +105,13 @@ export default class User {
         try {
             const valid = await compare(password, user.password);
             if(valid) {
-                const accessToken = `access-token-${user.ukey}`;
-                return new Result<any>({ukey: user.ukey, access_token: accessToken}, 200);
+                const accessToken = JWT.encode(user.ukey, user.refreshIndex, JWTActionType.userAccess);
+                const refreshToken = JWT.encode(user.ukey, user.refreshIndex, JWTActionType.refreshAccess)
+                if(accessToken == undefined || refreshToken == undefined) {
+                    return new Result<any>(new Error('Login failed'), 500);
+                }
+                
+                return new Result<any>({ukey: user.ukey, refresh_token: refreshToken, access_token: accessToken}, 200);
             }
             return new Result<any>(new Error('Invalid credentails'), 400);
         } catch(err) {
